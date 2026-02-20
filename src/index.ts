@@ -681,7 +681,7 @@ class TrelloServer {
       'get_card',
       {
         title: 'Get Card',
-        description: 'Get detailed information about a specific Trello card',
+        description: 'Get detailed information about a specific Trello card. Note: attachment metadata (name, URL, mimeType) is included in the response, but the server cannot download attachment file contents. If the user needs an attachment file, provide them the attachment URL so they can download it manually.',
         inputSchema: {
           cardId: z.string().describe('ID of the card to fetch'),
           includeMarkdown: z
@@ -981,18 +981,23 @@ class TrelloServer {
       'update_checklist_item',
       {
         title: 'Update Checklist Item',
-        description: 'Update a checklist item state (mark as complete or incomplete)',
+        description: 'Update a checklist item state (mark as complete or incomplete) and/or assign a member',
         inputSchema: {
           cardId: z.string().describe('ID of the card containing the checklist item'),
           checkItemId: z.string().describe('ID of the checklist item to update'),
           state: z
             .enum(['complete', 'incomplete'])
+            .optional()
             .describe('New state for the checklist item'),
+          idMember: z
+            .string()
+            .optional()
+            .describe('ID of the member to assign to the checklist item'),
         },
       },
-      async ({ cardId, checkItemId, state }) => {
+      async ({ cardId, checkItemId, state, idMember }) => {
         try {
-          const item = await this.trelloClient.updateChecklistItem(cardId, checkItemId, state);
+          const item = await this.trelloClient.updateChecklistItem(cardId, checkItemId, state, idMember);
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(item, null, 2) }],
           };
