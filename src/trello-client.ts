@@ -153,9 +153,10 @@ export class TrelloClient {
    * Set the active board
    */
   async setActiveBoard(boardId: string): Promise<TrelloBoard> {
-    // Verify the board exists
+    // Verify the board exists and resolve to full 24-char hex ID
+    // (Trello GET endpoints accept short URL IDs but POST endpoints require full IDs)
     const board = await this.getBoardById(boardId);
-    this.activeConfig.boardId = boardId;
+    this.activeConfig.boardId = board.id;
     await this.saveConfig();
     return board;
   }
@@ -258,13 +259,14 @@ export class TrelloClient {
     defaultLists?: boolean;
   }): Promise<TrelloBoard> {
     return this.handleRequest(async () => {
-      const response = await this.axiosInstance.post('/boards', {
+      const data: Record<string, unknown> = {
         name: params.name,
-        desc: params.desc,
         idOrganization: params.idOrganization ?? this.activeConfig.workspaceId,
-        defaultLabels: params.defaultLabels,
-        defaultLists: params.defaultLists,
-      });
+      };
+      if (params.desc !== undefined) data.desc = params.desc;
+      if (params.defaultLabels !== undefined) data.defaultLabels = params.defaultLabels;
+      if (params.defaultLists !== undefined) data.defaultLists = params.defaultLists;
+      const response = await this.axiosInstance.post('/boards', data);
       return response.data;
     });
   }
@@ -318,14 +320,15 @@ export class TrelloClient {
     }
   ): Promise<TrelloCard> {
     return this.handleRequest(async () => {
-      const response = await this.axiosInstance.post('/cards', {
+      const data: Record<string, unknown> = {
         idList: params.listId,
         name: params.name,
-        desc: params.description,
-        due: params.dueDate,
-        start: params.start,
-        idLabels: params.labels,
-      });
+      };
+      if (params.description !== undefined) data.desc = params.description;
+      if (params.dueDate !== undefined) data.due = params.dueDate;
+      if (params.start !== undefined) data.start = params.start;
+      if (params.labels !== undefined) data.idLabels = params.labels;
+      const response = await this.axiosInstance.post('/cards', data);
       return response.data;
     });
   }
@@ -343,14 +346,14 @@ export class TrelloClient {
     }
   ): Promise<TrelloCard> {
     return this.handleRequest(async () => {
-      const response = await this.axiosInstance.put(`/cards/${params.cardId}`, {
-        name: params.name,
-        desc: params.description,
-        due: params.dueDate,
-        start: params.start,
-        dueComplete: params.dueComplete,
-        idLabels: params.labels,
-      });
+      const data: Record<string, unknown> = {};
+      if (params.name !== undefined) data.name = params.name;
+      if (params.description !== undefined) data.desc = params.description;
+      if (params.dueDate !== undefined) data.due = params.dueDate;
+      if (params.start !== undefined) data.start = params.start;
+      if (params.dueComplete !== undefined) data.dueComplete = params.dueComplete;
+      if (params.labels !== undefined) data.idLabels = params.labels;
+      const response = await this.axiosInstance.put(`/cards/${params.cardId}`, data);
       return response.data;
     });
   }
@@ -376,12 +379,17 @@ export class TrelloClient {
   }
 
   async addList(boardId: string | undefined, name: string): Promise<TrelloList> {
-    const effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
+    let effectiveBoardId = boardId || this.activeConfig.boardId || this.defaultBoardId;
     if (!effectiveBoardId) {
       throw new McpError(
         ErrorCode.InvalidParams,
         'boardId is required when no default board is configured'
       );
+    }
+    // Resolve short URL IDs to full 24-char hex IDs (POST endpoints require full IDs)
+    if (effectiveBoardId.length !== 24) {
+      const board = await this.getBoardById(effectiveBoardId);
+      effectiveBoardId = board.id;
     }
     return this.handleRequest(async () => {
       const response = await this.axiosInstance.post('/lists', {
@@ -780,19 +788,21 @@ export class TrelloClient {
   }
 
   /**
-   * Update a checklist item state (complete/incomplete)
+   * Update a checklist item (state and/or assigned member)
    */
   async updateChecklistItem(
     cardId: string,
     checkItemId: string,
-    state: 'complete' | 'incomplete'
+    state?: 'complete' | 'incomplete',
+    idMember?: string
   ): Promise<TrelloCheckItem> {
     return this.handleRequest(async () => {
+      const data: Record<string, string> = {};
+      if (state) data.state = state;
+      if (idMember) data.idMember = idMember;
       const response = await this.axiosInstance.put<TrelloCheckItem>(
         `/cards/${cardId}/checkItem/${checkItemId}`,
-        {
-          state,
-        }
+        data
       );
       return response.data;
     });
@@ -1056,10 +1066,9 @@ export class TrelloClient {
       );
     }
     return this.handleRequest(async () => {
-      const response = await this.axiosInstance.post(`/boards/${effectiveBoardId}/labels`, {
-        name,
-        color,
-      });
+      const data: Record<string, unknown> = { name };
+      if (color !== undefined) data.color = color;
+      const response = await this.axiosInstance.post(`/boards/${effectiveBoardId}/labels`, data);
       return response.data;
     });
   }
